@@ -1,0 +1,97 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    --background: 240 10% 6%;
+    --foreground: 0 0% 98%;
+
+    --card: 240 8% 10%;
+    --card-foreground: 0 0% 98%;
+
+    --popover: 240 8% 12%;
+    --popover-foreground: 0 0% 98%;
+
+    --primary: 270 95% 65%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 190 95% 60%;
+    --secondary-foreground: 240 10% 6%;
+
+    --muted: 240 8% 20%;
+    --muted-foreground: 240 5% 65%;
+
+    --accent: 330 95% 65%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 85% 60%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 240 8% 20%;
+    --input: 240 8% 20%;
+    --ring: 270 95% 65%;
+
+    --radius: 0.75rem;
+
+    /* Esports Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(270 95% 65%), hsl(190 95% 60%));
+    --gradient-accent: linear-gradient(135deg, hsl(270 95% 65%), hsl(330 95% 65%));
+    --gradient-dark: linear-gradient(180deg, hsl(240 10% 6%), hsl(240 10% 10%));
+    
+    /* Glows */
+    --glow-primary: 0 0 20px hsl(270 95% 65% / 0.5);
+    --glow-secondary: 0 0 20px hsl(190 95% 60% / 0.5);
+    --glow-accent: 0 0 20px hsl(330 95% 65% / 0.5);
+    
+    /* Transitions */
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    background: linear-gradient(180deg, hsl(240 10% 6%), hsl(240 10% 10%));
+    min-height: 100vh;
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-bold;
+  }
+}
+
+@layer utilities {
+  .text-gradient {
+    background: var(--gradient-primary);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  
+  .glow-primary {
+    box-shadow: var(--glow-primary);
+  }
+  
+  .glow-secondary {
+    box-shadow: var(--glow-secondary);
+  }
+  
+  .glow-accent {
+    box-shadow: var(--glow-accent);
+  }
+  
+  .glass-card {
+    background: rgba(255, 255, 255, 0);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+}
