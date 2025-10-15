@@ -320,6 +320,7 @@ const EventLeaderboard = () => {
         name: "Mobile Legends",
         image: mlImg,
         participants: "80",
+        gameHead: { name: "Vaibhav Raj", phone: "8434307257" },
         format: "points",
         rankings: [
           { rank: 1, team: "Storm", points: 210, prize: "��2,000" },
@@ -332,6 +333,7 @@ const EventLeaderboard = () => {
         name: "Valorant",
         image: valorantImg,
         participants: "40",
+        gameHead: { name: "Sunil Kushwah", phone: "7083644807" },
         format: "points",
         rankings: [
           { rank: 1, team: "Gen.G", points: 230, prize: "₹2,000" },
@@ -344,6 +346,7 @@ const EventLeaderboard = () => {
         name: "COD Mobile",
         image: codImg,
         participants: "70",
+        gameHead: { name: "Abhishek Kumar", phone: "8877155782" },
         format: "points",
         rankings: [
           { rank: 1, team: "OpTic", points: 225, prize: "₹2,000" },
@@ -356,6 +359,7 @@ const EventLeaderboard = () => {
         name: "BGMI",
         image: bgmiImg,
         participants: "124",
+        gameHead: { name: "Arkaprovo Mukherjee", phone: "9563136407" },
         format: "points",
         rankings: [
           { rank: 1, team: "Storm", points: 210, prize: "₹2,000" },
@@ -368,6 +372,7 @@ const EventLeaderboard = () => {
         name: "Free Fire",
         image: freefireImg,
         participants: "184",
+        gameHead: { name: "Suryans Singh", phone: "6307843856" },
         format: "points",
         rankings: [
           { rank: 1, team: "Storm", points: 210, prize: "₹2,000" },
@@ -2780,15 +2785,28 @@ const EventLeaderboard = () => {
               {/* Contact Information (independent of tabs) */}
               <div className="mt-6">
                 <Card className="glass-card border-border/30 bg-black text-white">
-                  <CardHeader>
-                    <CardTitle className="font-orbitron text-2xl">For Queries</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-lg text-muted-foreground">
-                      For any queries, DM or contact the <span className="font-semibold text-yellow-400">Game Head — Vaibhav Raj</span> at <a href="tel:8434307257" className="font-semibold text-yellow-400">8434307257</a>.
-                    </p>
-                  </CardContent>
-                </Card>
+  <CardHeader>
+    <CardTitle className="font-orbitron text-2xl">For Queries</CardTitle>
+  </CardHeader>
+  <CardContent>
+    {selectedGame?.gameHead ? (
+      <p className="text-lg text-muted-foreground">
+        For any queries, DM or contact the{' '}
+        <span className="font-semibold text-yellow-400">
+          Game Head — {selectedGame.gameHead.name}
+        </span>{' '}
+        at{' '}
+        <a href={`tel:${selectedGame.gameHead.phone}`} className="font-semibold text-yellow-400">
+          {selectedGame.gameHead.phone}
+        </a>.
+      </p>
+    ) : (
+      <p className="text-lg text-muted-foreground">
+        For any queries, please reach out to the event organizers.
+      </p>
+    )}
+  </CardContent>
+</Card>
               </div>
 
 
