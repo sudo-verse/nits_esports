@@ -3142,6 +3142,30 @@ const EventLeaderboard = () => {
                   );
                 })()}
               </div>
+            ) : gameId === 'codm' ? (
+              <div className="space-y-6">
+                <h3 className="font-orbitron text-2xl tracking-tight">Playoffs — Top 8</h3>
+                {canEdit && (
+                  <div className="flex items-center gap-3 text-sm mt-2">
+                    {isSupabaseConfigured() ? (
+                      <>
+                        <div className="text-muted-foreground">
+                          {lastSavedAt ? `Last saved ${formatDistanceToNow(new Date(lastSavedAt))} ago` : "Never saved"}
+                          {isDirty && <span className="ml-2 text-yellow-500">(unsaved)</span>}
+                        </div>
+                        <Button size="sm" variant="outline" onClick={() => { setCodmBracket(buildCodmBracketFromOverall(codmOverall.map(r => r.team))); setIsDirty(true); toast.success('Bracket reseeded from leaderboard'); }}>Reseed from Leaderboard</Button>
+                        <Button size="sm" disabled={!isDirty || savingPoints} onClick={saveAllPoints}>{savingPoints ? "Saving..." : "Save"}</Button>
+                      </>
+                    ) : (
+                      <div className="text-red-500">Supabase not configured</div>
+                    )}
+                  </div>
+                )}
+
+                <div className="rounded-lg border border-border/40 bg-gradient-to-b from-background/60 to-background/30 p-4">
+                  <BracketView bracket={(codmBracket ?? buildCodmBracketFromOverall(codmOverall.map(r => r.team))) as any} onScoreChange={canEdit ? handleCodmScoreChange : undefined} />
+                </div>
+              </div>
             ) : (
               <div className="space-y-6">
                 {/* Upper Bracket - visual bracket style */}
