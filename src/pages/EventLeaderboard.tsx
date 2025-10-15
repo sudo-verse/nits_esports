@@ -13,6 +13,7 @@ import { isAuthed } from "@/auth/auth";
 import { supabase } from "@/lib/supabase";
 import { fetchPointsSnapshot, savePointsSnapshot, isSupabaseConfigured } from "@/data/leaderboardPoints";
 import BracketView from "@/components/bracket/BracketView";
+import type { Bracket } from "@/types/bracket";
 import mlImg from "@/assets/ml.jpg";
 import valorantImg from "@/assets/valorant.jpg";
 import codImg from "@/assets/cod.jpg";
@@ -386,6 +387,173 @@ const EventLeaderboard = () => {
   const event = baseEvent ?? specialLockLoad;
 
   const [mlGroupData, setMlGroupData] = useState<MobileLegendsGroupState>(() => cloneGroupRows(mobileLegendsGroupData));
+
+  // Mobile Legends bracket state (initialized from group results)
+  const [mlBracket, setMlBracket] = useState<Bracket | null>(null);
+
+  const buildMlBracketFromGroups = (): Bracket => {
+    const sortByPoints = (letter: GroupLetter) => {
+      const base = (mlGroupData[letter] ?? mobileLegendsGroupData[letter]).map((r, i) => ({ ...r, originalIndex: r.originalIndex ?? i }));
+      const withStats = base.map((r) => {
+        const pts = typeof r.points === 'number' ? r.points : Number(r.points) || 0;
+        const stats = deriveGroupRowStats(r);
+        return { ...r, points: pts, ...stats };
+      });
+      withStats.sort((a, b) => {
+        const aw = Number(a.gamesWon ?? 0) || 0;
+        const bw = Number(b.gamesWon ?? 0) || 0;
+        if (bw !== aw) return bw - aw;
+        const ap = Number(a.points ?? 0) || 0;
+        const bp = Number(b.points ?? 0) || 0;
+        if (bp !== ap) return bp - ap;
+        return a.team.localeCompare(b.team);
+      });
+      return withStats.slice(0, 2).map(r => r.team);
+    };
+
+    const A = sortByPoints('A');
+    const B = sortByPoints('B');
+    const C = sortByPoints('C');
+    const D = sortByPoints('D');
+
+    const quarterfinals = [
+      { teamA: A[0] ?? '��', teamB: D[1] ?? '—', scoreA: 0, scoreB: 0, status: 'upcoming' },
+      { teamA: B[0] ?? '—', teamB: C[1] ?? '—', scoreA: 0, scoreB: 0, status: 'upcoming' },
+      { teamA: C[0] ?? '—', teamB: B[1] ?? '—', scoreA: 0, scoreB: 0, status: 'upcoming' },
+      { teamA: D[0] ?? '—', teamB: A[1] ?? '—', scoreA: 0, scoreB: 0, status: 'upcoming' },
+    ];
+
+    const upperSemis = [
+      { teamA: 'Winner UB1', teamB: 'Winner UB2', scoreA: 0, scoreB: 0, status: 'upcoming' },
+      { teamA: 'Winner UB3', teamB: 'Winner UB4', scoreA: 0, scoreB: 0, status: 'upcoming' },
+    ];
+
+    const upperFinal = [
+      { teamA: 'Winner UB5', teamB: 'Winner UB6', scoreA: 0, scoreB: 0, status: 'upcoming' },
+    ];
+
+    const lowerRound1 = [
+      { teamA: 'Loser UB1', teamB: 'Loser UB2', scoreA: 0, scoreB: 0, status: 'upcoming' },
+      { teamA: 'Loser UB3', teamB: 'Loser UB4', scoreA: 0, scoreB: 0, status: 'upcoming' },
+    ];
+
+    const lowerQFs = [
+      { teamA: 'Winner LB1', teamB: 'Loser UB6', scoreA: 0, scoreB: 0, status: 'upcoming' },
+      { teamA: 'Winner LB2', teamB: 'Loser UB5', scoreA: 0, scoreB: 0, status: 'upcoming' },
+    ];
+
+    const lowerSemi = [
+      { teamA: 'Winner LB3', teamB: 'Winner LB4', scoreA: 0, scoreB: 0, status: 'upcoming' },
+    ];
+
+    const lowerFinal = [
+      { teamA: 'Loser UB7', teamB: 'Winner LB5', scoreA: 0, scoreB: 0, status: 'upcoming' },
+    ];
+
+    const grandFinal = [
+      { teamA: 'Winner UB7', teamB: 'Winner LB6', scoreA: 0, scoreB: 0, status: 'upcoming' },
+    ];
+
+    return { columns: [
+      { title: 'Upper • Quarterfinals', matches: quarterfinals },
+      { title: 'Upper • Semifinals', matches: upperSemis },
+      { title: 'Upper • Final', matches: upperFinal },
+      { title: 'Lower • Round 1 (Elimination)', matches: lowerRound1 },
+      { title: 'Lower • Quarterfinals', matches: lowerQFs },
+      { title: 'Lower • Semifinal', matches: lowerSemi },
+      { title: 'Lower • Final', matches: lowerFinal },
+      { title: 'Grand Final', matches: grandFinal },
+    ] } as Bracket;
+  };
+
+  useEffect(() => {
+    const hasStarted = !!mlBracket && mlBracket.columns.some(col => col.matches.some(m => m.status !== 'upcoming' || m.scoreA !== 0 || m.scoreB !== 0));
+    if (!mlBracket || !hasStarted) {
+      setMlBracket(buildMlBracketFromGroups());
+    }
+  }, [mlGroupData]);
+
+  // Propagate winners/losers through bracket after a score update
+  const propagateMatches = (br: Bracket, col: number, mIdx: number) => {
+    const updated = { ...br, columns: br.columns.map(c => ({ ...c, matches: c.matches.map(m => ({ ...m })) })) } as Bracket;
+    const match = updated.columns[col].matches[mIdx];
+    if (!match) return updated;
+    if (match.scoreA === match.scoreB) return updated;
+    const winner = match.scoreA > match.scoreB ? match.teamA : match.teamB;
+    const loser = match.scoreA > match.scoreB ? match.teamB : match.teamA;
+
+    // Column mappings based on layout
+    if (col === 0) {
+      // UB -> upper semis and lower round1
+      const ufMap = [ [1,0,'teamA'], [1,0,'teamB'], [1,1,'teamA'], [1,1,'teamB'] ];
+      const lbMap = [ [3,0,'teamA'], [3,0,'teamB'], [3,1,'teamA'], [3,1,'teamB'] ];
+      const [ufCol, ufMatch, ufSide] = ufMap[mIdx] as any;
+      const [lbCol, lbMatch, lbSide] = lbMap[mIdx] as any;
+      (updated.columns[ufCol].matches[ufMatch] as any)[ufSide] = winner;
+      (updated.columns[lbCol].matches[lbMatch] as any)[lbSide] = loser;
+    }
+
+    if (col === 1) {
+      // upper semis -> upper final and lowerQFs losers
+      (updated.columns[2].matches[0] as any)[mIdx === 0 ? 'teamA' : 'teamB'] = winner;
+      if (mIdx === 0) {
+        (updated.columns[4].matches[1] as any).teamB = loser; // LB4 gets Loser UB5
+      } else {
+        (updated.columns[4].matches[0] as any).teamB = loser; // LB3 gets Loser UB6
+      }
+    }
+
+    if (col === 2) {
+      // upper final
+      (updated.columns[7].matches[0] as any).teamA = winner;
+      (updated.columns[6].matches[0] as any).teamA = loser;
+    }
+
+    if (col === 3) {
+      // lower round1 -> to lowerQFs.teamA
+      const winnerTeam = match.scoreA > match.scoreB ? match.teamA : match.teamB;
+      const target = mIdx === 0 ? 0 : 1;
+      (updated.columns[4].matches[target] as any).teamA = winnerTeam;
+    }
+
+    if (col === 4) {
+      // lower QFs -> lowerSemi
+      const winnerTeam = match.scoreA > match.scoreB ? match.teamA : match.teamB;
+      (updated.columns[5].matches[0] as any)[mIdx === 0 ? 'teamA' : 'teamB'] = winnerTeam;
+    }
+
+    if (col === 5) {
+      // lower semi -> lower final.teamB
+      const winnerTeam = match.scoreA > match.scoreB ? match.teamA : match.teamB;
+      (updated.columns[6].matches[0] as any).teamB = winnerTeam;
+    }
+
+    if (col === 6) {
+      // lower final -> grand final.teamB
+      const winnerTeam = match.scoreA > match.scoreB ? match.teamA : match.teamB;
+      (updated.columns[7].matches[0] as any).teamB = winnerTeam;
+    }
+
+    if (col === 7) {
+      const champ = updated.columns[7].matches[0].scoreA > updated.columns[7].matches[0].scoreB ? updated.columns[7].matches[0].teamA : updated.columns[7].matches[0].teamB;
+      (updated as any).winner = champ;
+    }
+
+    return updated;
+  };
+
+  const handleMlScoreChange = (col: number, mIdx: number, newA: number, newB: number) => {
+    setMlBracket((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, columns: prev.columns.map(c => ({ ...c, matches: c.matches.map(m => ({ ...m })) })) } as Bracket;
+      next.columns[col].matches[mIdx].scoreA = newA;
+      next.columns[col].matches[mIdx].scoreB = newB;
+      if (newA !== newB) next.columns[col].matches[mIdx].status = 'completed';
+      const propagated = propagateMatches(next, col, mIdx);
+      return propagated;
+    });
+    setIsDirty(true);
+  };
   // Free Fire groups state (editable by admin)
   const [freefireGroups, setFreefireGroups] = useState<FreeFireGroupState>(() => ({
     A: createFreeFireGroupRows({ count: 12, startRank: 1, startTeamNumber: 1, basePoints: 120, step: 6 }),
@@ -824,9 +992,20 @@ const EventLeaderboard = () => {
             }
           }
           setMlGroupData(cloneGroupRows(base));
+          try {
+            const snapAny = snapshot as any;
+            if (snapAny?.bracket?.columns) {
+              setMlBracket(snapAny.bracket as Bracket);
+            } else {
+              setMlBracket(buildMlBracketFromGroups());
+            }
+          } catch {
+            setMlBracket(buildMlBracketFromGroups());
+          }
           setLastSavedAt(snapshot.updatedAt ?? null);
         } else {
           setMlGroupData(cloneGroupRows(mobileLegendsGroupData));
+          setMlBracket(buildMlBracketFromGroups());
           setLastSavedAt(snapshot?.updatedAt ?? null);
         }
         setIsDirty(false);
@@ -1009,7 +1188,7 @@ const EventLeaderboard = () => {
         };
         await savePointsSnapshot(eventId, gameId, payload);
       } else if (gameId === "ml") {
-        const payload = { groups: mlGroupData };
+        const payload = { groups: mlGroupData, bracket: mlBracket ?? buildMlBracketFromGroups() } as any;
         await savePointsSnapshot(eventId, gameId, payload);
       } else if (gameId === 'freefire') {
         // Rebuild semifinals from current group data so top-3 from each group are promoted
@@ -2530,253 +2709,395 @@ const EventLeaderboard = () => {
 
 {gameId !== 'freefire' && gameId !== 'bgmi' && (
           <TabsContent value="pointrush">
-            <div className="space-y-6">
-              {/* Upper Bracket - visual bracket style */}
-              <div>
-                <h3 className="font-orbitron text-2xl mb-4">Upper Bracket</h3>
-                <div className="relative flex gap-6 items-start">
-                  {/* Quarterfinals column */}
-{gameId !== 'valorant' && gameId !== 'codm' && (
-                  <div className="flex flex-col gap-6 w-full md:w-1/4">
-                    {[{ teamA: 'Team 1', teamB: 'Team 2', scoreA: 2, scoreB: 1, label: 'QF 1' },
-                      { teamA: 'Team 3', teamB: 'Team 4', scoreA: 2, scoreB: 0, label: 'QF 2' },
-                      { teamA: 'Team 5', teamB: 'Team 6', scoreA: 1, scoreB: 2, label: 'QF 3' },
-                      { teamA: 'Team 7', teamB: 'Team 8', scoreA: 0, scoreB: 2, label: 'QF 4' }].map((m, i) => (
-                      <div key={i} className="bg-black text-white rounded-md p-3 shadow-sm border border-border/30">
-                        <div className="text-xs text-muted-foreground mb-1">{m.label}</div>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center text-xs font-semibold">{m.teamA.split(' ').map(s=>s[0]).slice(0,2).join('')}</div>
-                            <div className="text-sm font-medium">{m.teamA}</div>
-                          </div>
-                          <div className="text-sm font-bold">{m.scoreA}</div>
+            {gameId === 'ml' ? (
+              <div className="space-y-6">
+                {/* Double elimination header */}
+                <h3 className="font-orbitron text-2xl tracking-tight">Double Elimination — 8 Teams</h3>
+                {canEdit && (
+                  <div className="flex items-center gap-3 text-sm mt-2">
+                    {isSupabaseConfigured() ? (
+                      <>
+                        <div className="text-muted-foreground">
+                          {lastSavedAt ? `Last saved ${formatDistanceToNow(new Date(lastSavedAt))} ago` : "Never saved"}
+                          {isDirty && <span className="ml-2 text-yellow-500">(unsaved)</span>}
                         </div>
-                        <div className="flex items-center justify-between mt-2">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center text-xs font-semibold">{m.teamB.split(' ').map(s=>s[0]).slice(0,2).join('')}</div>
-                            <div className="text-sm font-medium">{m.teamB}</div>
-                          </div>
-                          <div className="text-sm font-bold">{m.scoreB}</div>
-                        </div>
-                      </div>
-                    ))}
+                        <Button size="sm" variant="outline" onClick={() => { setMlBracket(buildMlBracketFromGroups()); setIsDirty(true); toast.success('Bracket reseeded from groups'); }}>Reseed from Groups</Button>
+                        <Button size="sm" disabled={!isDirty || savingPoints} onClick={saveAllPoints}>{savingPoints ? "Saving..." : "Save"}</Button>
+                      </>
+                    ) : (
+                      <div className="text-red-500">Supabase not configured</div>
+                    )}
                   </div>
                 )}
 
-                  {/* Semifinals column with connector line */}
-                  <div className="flex flex-col gap-12 w-full md:w-1/4 self-center">
-                    <div className="border-l-2 border-dashed border-border/30 pl-6">
-                      <div className="bg-black text-white rounded-md p-3 shadow-sm border border-border/30">
-                        <div className="text-xs text-muted-foreground">SF 1</div>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center text-xs font-semibold">TF</div>
-                            <div className="text-sm font-medium">Team 1</div>
-                          </div>
-                          <div className="text-sm font-bold">2</div>
-                        </div>
-                        <div className="flex items-center justify-between mt-2">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center text-xs font-semibold">PG</div>
-                            <div className="text-sm font-medium">Team 3</div>
-                          </div>
-                          <div className="text-sm font-bold">0</div>
-                        </div>
-                      </div>
+                {(() => {
+                  const sortByPoints = (letter: GroupLetter) => {
+                    const base = (mlGroupData[letter] ?? mobileLegendsGroupData[letter]).map((r, i) => ({ ...r, originalIndex: r.originalIndex ?? i }));
+                    const withStats = base.map((r) => {
+                      const pts = typeof r.points === 'number' ? r.points : Number(r.points) || 0;
+                      const stats = deriveGroupRowStats(r);
+                      return { ...r, points: pts, ...stats };
+                    });
+                    withStats.sort((a, b) => {
+        const aw = Number(a.gamesWon ?? 0) || 0;
+        const bw = Number(b.gamesWon ?? 0) || 0;
+        if (bw !== aw) return bw - aw;
+        const ap = Number(a.points ?? 0) || 0;
+        const bp = Number(b.points ?? 0) || 0;
+        if (bp !== ap) return bp - ap;
+        return a.team.localeCompare(b.team);
+      });
+                    return withStats;
+                  };
 
-                      <div className="mt-6 bg-black text-white rounded-md p-3 shadow-sm border border-border/30">
-                        <div className="text-xs text-muted-foreground">SF 2</div>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center text-xs font-semibold">TV</div>
-                            <div className="text-sm font-medium">Team 6</div>
+                  const A = sortByPoints('A').slice(0,2).map(r => r.team);
+                  const B = sortByPoints('B').slice(0,2).map(r => r.team);
+                  const C = sortByPoints('C').slice(0,2).map(r => r.team);
+                  const D = sortByPoints('D').slice(0,2).map(r => r.team);
+
+                  const quarterfinals = [
+                    // UB1: A1 vs D2
+                    { teamA: A[0] ?? '—', teamB: D[1] ?? '—', scoreA: 0, scoreB: 0, status: 'upcoming' as const },
+                    // UB2: B1 vs C2
+                    { teamA: B[0] ?? '—', teamB: C[1] ?? '—', scoreA: 0, scoreB: 0, status: 'upcoming' as const },
+                    // UB3: C1 vs B2
+                    { teamA: C[0] ?? '—', teamB: B[1] ?? '—', scoreA: 0, scoreB: 0, status: 'upcoming' as const },
+                    // UB4: D1 vs A2
+                    { teamA: D[0] ?? '��', teamB: A[1] ?? '—', scoreA: 0, scoreB: 0, status: 'upcoming' as const },
+                  ];
+
+                  // Build full double-elimination bracket (upper + lower)
+                  const upperSemis = [
+                    { teamA: 'Winner UB1', teamB: 'Winner UB2', scoreA: 0, scoreB: 0, status: 'upcoming' as const },
+                    { teamA: 'Winner UB3', teamB: 'Winner UB4', scoreA: 0, scoreB: 0, status: 'upcoming' as const },
+                  ];
+
+                  const upperFinal = [
+                    { teamA: 'Winner UB5', teamB: 'Winner UB6', scoreA: 0, scoreB: 0, status: 'upcoming' as const },
+                  ];
+
+                  const lowerRound1 = [
+                    { teamA: 'Loser UB1', teamB: 'Loser UB2', scoreA: 0, scoreB: 0, status: 'upcoming' as const },
+                    { teamA: 'Loser UB3', teamB: 'Loser UB4', scoreA: 0, scoreB: 0, status: 'upcoming' as const },
+                  ];
+
+                  const lowerQFs = [
+                    { teamA: 'Winner LB1', teamB: 'Loser UB6', scoreA: 0, scoreB: 0, status: 'upcoming' as const },
+                    { teamA: 'Winner LB2', teamB: 'Loser UB5', scoreA: 0, scoreB: 0, status: 'upcoming' as const },
+                  ];
+
+                  const lowerSemi = [
+                    { teamA: 'Winner LB3', teamB: 'Winner LB4', scoreA: 0, scoreB: 0, status: 'upcoming' as const },
+                  ];
+
+                  const lowerFinal = [
+                    { teamA: 'Loser UB7', teamB: 'Winner LB5', scoreA: 0, scoreB: 0, status: 'upcoming' as const },
+                  ];
+
+                  const grandFinal = [
+                    { teamA: 'Winner UB7', teamB: 'Winner LB6', scoreA: 0, scoreB: 0, status: 'upcoming' as const },
+                  ];
+
+                  const columns = [
+                    { title: 'Upper • Quarterfinals', matches: quarterfinals },
+                    { title: 'Upper • Semifinals', matches: upperSemis },
+                    { title: 'Upper • Final', matches: upperFinal },
+                    { title: 'Lower • Round 1 (Elimination)', matches: lowerRound1 },
+                    { title: 'Lower • Quarterfinals', matches: lowerQFs },
+                    { title: 'Lower • Semifinal', matches: lowerSemi },
+                    { title: 'Lower • Final', matches: lowerFinal },
+                    { title: 'Grand Final', matches: grandFinal },
+                  ] as const;
+
+                  const upperColumns = { columns: columns.slice(0, 3) } as any;
+                  const lowerColumns = { columns: columns.slice(3, columns.length - 1) } as any;
+
+                  return (
+                    <div className="space-y-6">
+                      <Tabs defaultValue="bracket">
+                        <TabsList className="w-full justify-start sm:w-auto">
+                          <TabsTrigger value="bracket">Bracket</TabsTrigger>
+                          <TabsTrigger value="grand">Grand Final</TabsTrigger>
+                        </TabsList>
+
+                        <TabsContent value="bracket" className="mt-4">
+                          <div className="rounded-lg border border-border/40 bg-gradient-to-b from-background/60 to-background/30 p-4">
+                            <h4 className="text-sm uppercase text-muted-foreground mb-3">Upper Bracket</h4>
+                            <BracketView bracket={{ columns: (mlBracket ?? buildMlBracketFromGroups()).columns.slice(0,3) } as any} onScoreChange={canEdit ? handleMlScoreChange : undefined} />
                           </div>
-                          <div className="text-sm font-bold">1</div>
+
+                          <div className="rounded-lg border border-border/40 bg-gradient-to-b from-background/60 to-background/30 p-4">
+                            <h4 className="text-sm uppercase text-muted-foreground mb-3">Lower Bracket (Losers)</h4>
+                            <BracketView bracket={{ columns: (mlBracket ?? buildMlBracketFromGroups()).columns.slice(3,7) } as any} onScoreChange={canEdit ? handleMlScoreChange : undefined} colOffset={3} />
+                          </div>
+
+                          <div className="text-right text-xs text-muted-foreground mt-2">Winners advance in Upper Bracket; losers move to Lower Bracket.</div>
+                        </TabsContent>
+
+                        <TabsContent value="grand" className="mt-4">
+                          <div className="rounded-lg border border-border/40 bg-gradient-to-b from-background/60 to-background/30 p-6 text-center">
+                            <h4 className="text-sm uppercase text-muted-foreground mb-3">Grand Final</h4>
+                            <div className="max-w-xl mx-auto">
+                              <BracketView bracket={{ columns: [(mlBracket ?? buildMlBracketFromGroups()).columns[7]] } as any} onScoreChange={canEdit ? handleMlScoreChange : undefined} colOffset={7} />
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-3">Grand Final determines the champion. If Upper Bracket winner loses, bracket-specific rules apply.</div>
+                          </div>
+                        </TabsContent>
+
+                      </Tabs>
+                    </div>
+                  );
+                })()}
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {/* Upper Bracket - visual bracket style */}
+                <div>
+                  <h3 className="font-orbitron text-2xl mb-4">Upper Bracket</h3>
+                  <div className="relative flex gap-6 items-start">
+                    {/* Quarterfinals column */}
+{gameId !== 'valorant' && gameId !== 'codm' && (
+                    <div className="flex flex-col gap-6 w-full md:w-1/4">
+                      {[{ teamA: 'Team 1', teamB: 'Team 2', scoreA: 2, scoreB: 1, label: 'QF 1' },
+                        { teamA: 'Team 3', teamB: 'Team 4', scoreA: 2, scoreB: 0, label: 'QF 2' },
+                        { teamA: 'Team 5', teamB: 'Team 6', scoreA: 1, scoreB: 2, label: 'QF 3' },
+                        { teamA: 'Team 7', teamB: 'Team 8', scoreA: 0, scoreB: 2, label: 'QF 4' }].map((m, i) => (
+                        <div key={i} className="bg-black text-white rounded-md p-3 shadow-sm border border-border/30">
+                          <div className="text-xs text-muted-foreground mb-1">{m.label}</div>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center text-xs font-semibold">{m.teamA.split(' ').map(s=>s[0]).slice(0,2).join('')}</div>
+                              <div className="text-sm font-medium">{m.teamA}</div>
+                            </div>
+                            <div className="text-sm font-bold">{m.scoreA}</div>
+                          </div>
+                          <div className="flex items-center justify-between mt-2">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center text-xs font-semibold">{m.teamB.split(' ').map(s=>s[0]).slice(0,2).join('')}</div>
+                              <div className="text-sm font-medium">{m.teamB}</div>
+                            </div>
+                            <div className="text-sm font-bold">{m.scoreB}</div>
+                          </div>
                         </div>
-                        <div className="flex items-center justify-between mt-2">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center text-xs font-semibold">VP</div>
-                            <div className="text-sm font-medium">Team 8</div>
+                      ))}
+                    </div>
+                  )}
+
+                    {/* Semifinals column with connector line */}
+                    <div className="flex flex-col gap-12 w-full md:w-1/4 self-center">
+                      <div className="border-l-2 border-dashed border-border/30 pl-6">
+                        <div className="bg-black text-white rounded-md p-3 shadow-sm border border-border/30">
+                          <div className="text-xs text-muted-foreground">SF 1</div>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center text-xs font-semibold">TF</div>
+                              <div className="text-sm font-medium">Team 1</div>
+                            </div>
+                            <div className="text-sm font-bold">2</div>
                           </div>
-                          <div className="text-sm font-bold">2</div>
+                          <div className="flex items-center justify-between mt-2">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center text-xs font-semibold">PG</div>
+                              <div className="text-sm font-medium">Team 3</div>
+                            </div>
+                            <div className="text-sm font-bold">0</div>
+                          </div>
+                        </div>
+
+                        <div className="mt-6 bg-black text-white rounded-md p-3 shadow-sm border border-border/30">
+                          <div className="text-xs text-muted-foreground">SF 2</div>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center text-xs font-semibold">TV</div>
+                              <div className="text-sm font-medium">Team 6</div>
+                            </div>
+                            <div className="text-sm font-bold">1</div>
+                          </div>
+                          <div className="flex items-center justify-between mt-2">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center text-xs font-semibold">VP</div>
+                              <div className="text-sm font-medium">Team 8</div>
+                            </div>
+                            <div className="text-sm font-bold">2</div>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
 
-                  {/* Final column */}
-                  <div className="flex flex-col gap-24 w-full md:w-1/4 self-center">
-                    <div className="border-l-2 border-dashed border-border/30 pl-6">
-                      <div className="bg-black text-white rounded-md p-3 shadow-md border border-border/40">
-                        <div className="text-xs text-muted-foreground">Upper Bracket Final</div>
-                        <div className="flex items-center justify-between mt-2">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-neutral-800 flex items-center justify-center text-sm font-semibold">T1</div>
-                            <div className="text-sm font-semibold">Team 1</div>
+                    {/* Final column */}
+                    <div className="flex flex-col gap-24 w-full md:w-1/4 self-center">
+                      <div className="border-l-2 border-dashed border-border/30 pl-6">
+                        <div className="bg-black text-white rounded-md p-3 shadow-md border border-border/40">
+                          <div className="text-xs text-muted-foreground">Upper Bracket Final</div>
+                          <div className="flex items-center justify-between mt-2">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-full bg-neutral-800 flex items-center justify-center text-sm font-semibold">T1</div>
+                              <div className="text-sm font-semibold">Team 1</div>
+                            </div>
+                            <div className="text-lg font-bold">3</div>
                           </div>
-                          <div className="text-lg font-bold">3</div>
-                        </div>
-                        <div className="flex items-center justify-between mt-3">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-neutral-800 flex items-center justify-center text-sm font-semibold">T8</div>
-                            <div className="text-sm font-semibold">Team 8</div>
+                          <div className="flex items-center justify-between mt-3">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-full bg-neutral-800 flex items-center justify-center text-sm font-semibold">T8</div>
+                              <div className="text-sm font-semibold">Team 8</div>
+                            </div>
+                            <div className="text-lg font-bold">2</div>
                           </div>
-                          <div className="text-lg font-bold">2</div>
                         </div>
-                      </div>
-                      {/*
+                        {/*
 
-                      <div className="mt-6 text-center">
-                        <div className="inline-block border border-yellow-400 text-yellow-400 px-4 py-2 rounded-full font-semibold">Qualified</div>
+                        <div className="mt-6 text-center">
+                          <div className="inline-block border border-yellow-400 text-yellow-400 px-4 py-2 rounded-full font-semibold">Qualified</div>
+                        </div>
+                        */}
                       </div>
-                      */}
                     </div>
-                  </div>
 
-                  {/* Advances column */}
-                  <div className="flex flex-col gap-6 w-full md:w-1/4 self-center">
-                    {/*<div className="text-sm text-muted-foreground mb-2">Advances</div>*/}
-                    <div className="mt-6">
-                      <Card className="p-4 text-center bg-black border border-yellow-400 text-yellow-400">
-                        <div className="font-semibold">Team 1</div>
-                      </Card>
+                    {/* Advances column */}
+                    <div className="flex flex-col gap-6 w-full md:w-1/4 self-center">
+                      {/*<div className="text-sm text-muted-foreground mb-2">Advances</div>*/}
+                      <div className="mt-6">
+                        <Card className="p-4 text-center bg-black border border-yellow-400 text-yellow-400">
+                          <div className="font-semibold">Team 1</div>
+                        </Card>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Lower Bracket - tracks eliminations and deciders */}
-              <div>
-                <h3 className="font-orbitron text-2xl mb-4">Lower Bracket</h3>
-                <div className="grid grid-cols-5 gap-6 items-start">
-                  {/* Round 1 - losers from QFs */}
+                {/* Lower Bracket - tracks eliminations and deciders */}
+                <div>
+                  <h3 className="font-orbitron text-2xl mb-4">Lower Bracket</h3>
+                  <div className="grid grid-cols-5 gap-6 items-start">
+                    {/* Round 1 - losers from QFs */}
 {gameId !== 'valorant' && gameId !== 'codm' && (
-                  <div className="flex flex-col gap-6 col-span-1">
-                    {[{ teamA: 'Team 2', teamB: 'Team 4', scoreA: 1, scoreB: 2, label: 'LB R1' }, { teamA: 'Team 5', teamB: 'Team 7', scoreA: 0, scoreB: 2, label: 'LB R1' }].map((m, i) => (
-                      <div key={i} className="bg-black text-white rounded-md p-3 shadow-sm border border-border/30">
-                        <div className="text-xs text-muted-foreground mb-1">{m.label}</div>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center text-xs font-semibold">{m.teamA.split(' ').map(s=>s[0]).slice(0,2).join('')}</div>
-                            <div className="text-sm font-medium">{m.teamA}</div>
+                    <div className="flex flex-col gap-6 col-span-1">
+                      {[{ teamA: 'Team 2', teamB: 'Team 4', scoreA: 1, scoreB: 2, label: 'LB R1' }, { teamA: 'Team 5', teamB: 'Team 7', scoreA: 0, scoreB: 2, label: 'LB R1' }].map((m, i) => (
+                        <div key={i} className="bg-black text-white rounded-md p-3 shadow-sm border border-border/30">
+                          <div className="text-xs text-muted-foreground mb-1">{m.label}</div>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center text-xs font-semibold">{m.teamA.split(' ').map(s=>s[0]).slice(0,2).join('')}</div>
+                              <div className="text-sm font-medium">{m.teamA}</div>
+                            </div>
+                            <div className="text-sm font-bold">{m.scoreA}</div>
                           </div>
-                          <div className="text-sm font-bold">{m.scoreA}</div>
-                        </div>
-                        <div className="flex items-center justify-between mt-2">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center text-xs font-semibold">{m.teamB.split(' ').map(s=>s[0]).slice(0,2).join('')}</div>
-                            <div className="text-sm font-medium">{m.teamB}</div>
+                          <div className="flex items-center justify-between mt-2">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center text-xs font-semibold">{m.teamB.split(' ').map(s=>s[0]).slice(0,2).join('')}</div>
+                              <div className="text-sm font-medium">{m.teamB}</div>
+                            </div>
+                            <div className="text-sm font-bold">{m.scoreB}</div>
                           </div>
-                          <div className="text-sm font-bold">{m.scoreB}</div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                      ))}
+                    </div>
+                  )}
 
-                  {/* Lower QFs */}
+                    {/* Lower QFs */}
 {gameId !== 'valorant' && gameId !== 'codm' && (
-                  <div className="flex flex-col gap-5 col-span-1">
-                    <div className="border-l-2 border-dashed border-border/30 pl-6">
-                      <div className="bg-black text-white rounded-md p-3 shadow-sm border border-border/30">
-                        <div className="text-xs text-muted-foreground">Lower QF</div>
-                        <div className="flex items-center justify-between mt-2">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center text-xs font-semibold">T3</div>
-                            <div className="text-sm font-medium">Team 3</div>
+                    <div className="flex flex-col gap-5 col-span-1">
+                      <div className="border-l-2 border-dashed border-border/30 pl-6">
+                        <div className="bg-black text-white rounded-md p-3 shadow-sm border border-border/30">
+                          <div className="text-xs text-muted-foreground">Lower QF</div>
+                          <div className="flex items-center justify-between mt-2">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center text-xs font-semibold">T3</div>
+                              <div className="text-sm font-medium">Team 3</div>
+                            </div>
+                            <div className="text-sm font-bold">2</div>
                           </div>
-                          <div className="text-sm font-bold">2</div>
+                          <div className="flex items-center justify-between mt-2">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center text-xs font-semibold">T4</div>
+                              <div className="text-sm font-medium">Team 4</div>
+                            </div>
+                            <div className="text-sm font-bold">1</div>
+                          </div>
                         </div>
-                        <div className="flex items-center justify-between mt-2">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center text-xs font-semibold">T4</div>
-                            <div className="text-sm font-medium">Team 4</div>
+                      </div>
+                      <div className="border-l-2 border-dashed border-border/30 pl-6">
+                        <div className="bg-black text-white rounded-md p-3 shadow-sm border border-border/30">
+                          <div className="text-xs text-muted-foreground">Lower QF</div>
+                          <div className="flex items-center justify-between mt-2">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center text-xs font-semibold">T6</div>
+                              <div className="text-sm font-medium">Team 6</div>
+                            </div>
+                            <div className="text-sm font-bold">2</div>
                           </div>
-                          <div className="text-sm font-bold">1</div>
+                          <div className="flex items-center justify-between mt-2">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center text-xs font-semibold">T7</div>
+                              <div className="text-sm font-medium">Team 7</div>
+                            </div>
+                            <div className="text-sm font-bold">1</div>
+                          </div>
                         </div>
                       </div>
                     </div>
-                    <div className="border-l-2 border-dashed border-border/30 pl-6">
-                      <div className="bg-black text-white rounded-md p-3 shadow-sm border border-border/30">
-                        <div className="text-xs text-muted-foreground">Lower QF</div>
-                        <div className="flex items-center justify-between mt-2">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center text-xs font-semibold">T6</div>
-                            <div className="text-sm font-medium">Team 6</div>
-                          </div>
-                          <div className="text-sm font-bold">2</div>
-                        </div>
-                        <div className="flex items-center justify-between mt-2">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center text-xs font-semibold">T7</div>
-                            <div className="text-sm font-medium">Team 7</div>
-                          </div>
-                          <div className="text-sm font-bold">1</div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
+                  )}
 
-                  {/* Lower SF */}
-                  <div className="flex flex-col gap-16 col-span-1 self-center">
-                    <div className="border-l-2 border-dashed border-border/30 pl-6">
-                      <div className="bg-black text-white rounded-md p-3 shadow-sm border border-border/30">
-                        <div className="text-xs text-muted-foreground">Lower SF</div>
-                        <div className="flex items-center justify-between mt-2">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center text-xs font-semibold">T3</div>
-                            <div className="text-sm font-medium">Team 3</div>
+                    {/* Lower SF */}
+                    <div className="flex flex-col gap-16 col-span-1 self-center">
+                      <div className="border-l-2 border-dashed border-border/30 pl-6">
+                        <div className="bg-black text-white rounded-md p-3 shadow-sm border border-border/30">
+                          <div className="text-xs text-muted-foreground">Lower SF</div>
+                          <div className="flex items-center justify-between mt-2">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center text-xs font-semibold">T3</div>
+                              <div className="text-sm font-medium">Team 3</div>
+                            </div>
+                            <div className="text-sm font-bold">3</div>
                           </div>
-                          <div className="text-sm font-bold">3</div>
-                        </div>
-                        <div className="flex items-center justify-between mt-2">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center text-xs font-semibold">T6</div>
-                            <div className="text-sm font-medium">Team 6</div>
+                          <div className="flex items-center justify-between mt-2">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center text-xs font-semibold">T6</div>
+                              <div className="text-sm font-medium">Team 6</div>
+                            </div>
+                            <div className="text-sm font-bold">0</div>
                           </div>
-                          <div className="text-sm font-bold">0</div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Lower Bracket Final */}
-                  <div className="flex flex-col gap-16 col-span-1 self-center">
-                    <div className="border-l-2 border-dashed border-border/30 pl-6">
-                      <div className="bg-black text-white rounded-md p-3 shadow-sm border border-border/30">
-                        <div className="text-xs text-muted-foreground">Lower Bracket Final</div>
-                        <div className="flex items-center justify-between mt-2">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center text-xs font-semibold">T3</div>
-                            <div className="text-sm font-medium">Team 3</div>
-                          </div>
-                          <div className="text-sm font-bold">3</div>
-                        </div>
-                        <div className="flex items-center justify-between mt-2">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center text-xs font-semibold">T8</div>
-                            <div className="text-sm font-medium">Team 8</div>
-                          </div>
-                          <div className="text-sm font-bold">0</div>
                         </div>
                       </div>
                     </div>
-                  </div>
 
-                  {/* Advances */}
-                  <div className="flex flex-col gap-6 col-span-1 self-center">
-                    {/*<div className="text-sm text-muted-foreground mb-2">Advances</div>*/}
-                    <div className="mt-6">
-                      <Card className="p-4 text-center bg-black border border-yellow-400 text-yellow-400">
-                        <div className="font-semibold">Team 3</div>
-                      </Card>
+                    {/* Lower Bracket Final */}
+                    <div className="flex flex-col gap-16 col-span-1 self-center">
+                      <div className="border-l-2 border-dashed border-border/30 pl-6">
+                        <div className="bg-black text-white rounded-md p-3 shadow-sm border border-border/30">
+                          <div className="text-xs text-muted-foreground">Lower Bracket Final</div>
+                          <div className="flex items-center justify-between mt-2">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center text-xs font-semibold">T3</div>
+                              <div className="text-sm font-medium">Team 3</div>
+                            </div>
+                            <div className="text-sm font-bold">3</div>
+                          </div>
+                          <div className="flex items-center justify-between mt-2">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center text-xs font-semibold">T8</div>
+                              <div className="text-sm font-medium">Team 8</div>
+                            </div>
+                            <div className="text-sm font-bold">0</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Advances */}
+                    <div className="flex flex-col gap-6 col-span-1 self-center">
+                      {/*<div className="text-sm text-muted-foreground mb-2">Advances</div>*/}
+                      <div className="mt-6">
+                        <Card className="p-4 text-center bg-black border border-yellow-400 text-yellow-400">
+                          <div className="font-semibold">Team 3</div>
+                        </Card>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
 
-            </div>
+              </div>
+            )}
           </TabsContent>
           )}
 
