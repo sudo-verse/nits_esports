@@ -1247,7 +1247,7 @@ const EventLeaderboard = () => {
               ) : gameId === 'bgmi' ? (
                 <TabsTrigger value="groupstage">Finals</TabsTrigger>
               ) : (
-                <TabsTrigger value="pointrush">Double Elimination</TabsTrigger>
+                <TabsTrigger value="pointrush">{gameId === 'codm' ? 'Playoffs' : 'Double Elimination'}</TabsTrigger>
               )}
             </TabsList>
           </div>
