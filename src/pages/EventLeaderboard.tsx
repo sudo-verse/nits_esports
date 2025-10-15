@@ -715,6 +715,126 @@ const EventLeaderboard = () => {
       }));
   }, [semifinalRows]);
 
+  const CODM_MATCH_KEYS = ["match1", "match2", "match3"] as const;
+  type CodmMatchKey = typeof CODM_MATCH_KEYS[number];
+  type CodmMatchStats = { wins: number; placement: number; kills: number; points: number };
+  type CodmRow = { id: string; team: string; matches: Record<CodmMatchKey, CodmMatchStats> };
+
+  const createEmptyCodmMatch = (): CodmMatchStats => ({ wins: 0, placement: 0, kills: 0, points: 0 });
+  const createEmptyCodmMatches = (): Record<CodmMatchKey, CodmMatchStats> => ({
+    match1: createEmptyCodmMatch(),
+    match2: createEmptyCodmMatch(),
+    match3: createEmptyCodmMatch(),
+  });
+
+  const [codmRows, setCodmRows] = useState<CodmRow[]>(() =>
+    Array.from({ length: 14 }, (_, i) => ({ id: `${i}`, team: `Team ${i + 1}`, matches: createEmptyCodmMatches() }))
+  );
+
+  const updateCodmTeamName = (rowId: string, name: string) => {
+    setCodmRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, team: name } : r)));
+    setIsDirty(true);
+  };
+
+  const updateCodmStat = useCallback(
+    (rowId: string, matchKey: CodmMatchKey, field: "wins" | "placement" | "kills", value: string) => {
+      const n = Number(value);
+      const v = Number.isFinite(n) ? n : 0;
+      setCodmRows((prev) =>
+        prev.map((r) => {
+          if (r.id !== rowId) return r;
+          const m = r.matches[matchKey];
+          const updated = { ...m, [field]: v } as CodmMatchStats;
+          updated.points = (field === "placement" ? v : m.placement) + (field === "kills" ? v : m.kills);
+          return { ...r, matches: { ...r.matches, [matchKey]: updated } };
+        })
+      );
+      setIsDirty(true);
+    },
+    [setCodmRows, setIsDirty]
+  );
+
+  const codmOverall = useMemo(() => {
+    const rows = codmRows
+      .map((r) => {
+        const totals = CODM_MATCH_KEYS.reduce(
+          (acc, mk) => {
+            const m = r.matches[mk];
+            acc.wins += m.wins || 0;
+            acc.placement += m.placement || 0;
+            acc.kills += m.kills || 0;
+            return acc;
+          },
+          { wins: 0, placement: 0, kills: 0 }
+        );
+        const totalPoints = totals.placement + totals.kills;
+        return { id: r.id, team: r.team, totalWins: totals.wins, totalPlacement: totals.placement, totalKills: totals.kills, totalPoints };
+      })
+      .sort((a, b) => b.totalPoints - a.totalPoints);
+    return rows.map((r, i) => ({ rank: i + 1, ...r }));
+  }, [codmRows]);
+
+  const [codmBracket, setCodmBracket] = useState<Bracket | null>(null);
+
+  const buildCodmBracketFromOverall = (teams: string[]): Bracket => {
+    const seeds = teams.slice(0, 8);
+    const qf = [
+      { teamA: seeds[0] ?? "—", teamB: seeds[7] ?? "—", scoreA: 0, scoreB: 0, status: "upcoming" as const },
+      { teamA: seeds[1] ?? "—", teamB: seeds[6] ?? "—", scoreA: 0, scoreB: 0, status: "upcoming" as const },
+      { teamA: seeds[2] ?? "—", teamB: seeds[5] ?? "—", scoreA: 0, scoreB: 0, status: "upcoming" as const },
+      { teamA: seeds[3] ?? "—", teamB: seeds[4] ?? "—", scoreA: 0, scoreB: 0, status: "upcoming" as const },
+    ];
+    const sf = [
+      { teamA: "Winner M1", teamB: "Winner M4", scoreA: 0, scoreB: 0, status: "upcoming" as const },
+      { teamA: "Winner M2", teamB: "Winner M3", scoreA: 0, scoreB: 0, status: "upcoming" as const },
+    ];
+    const gf = [{ teamA: "Winner SF1", teamB: "Winner SF2", scoreA: 0, scoreB: 0, status: "upcoming" as const }];
+    return {
+      columns: [
+        { title: "Quarterfinals", matches: qf },
+        { title: "Semifinals", matches: sf },
+        { title: "Grand Final", matches: gf },
+      ],
+    } as Bracket;
+  };
+
+  useEffect(() => {
+    if (gameId !== "codm") return;
+    if (!codmBracket) {
+      setCodmBracket(buildCodmBracketFromOverall(codmOverall.map((r) => r.team)));
+    }
+  }, [gameId, codmBracket, codmOverall]);
+
+  const handleCodmScoreChange = (col: number, mIdx: number, newA: number, newB: number) => {
+    setCodmBracket((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, columns: prev.columns.map((c) => ({ ...c, matches: c.matches.map((m) => ({ ...m })) })) } as Bracket;
+      next.columns[col].matches[mIdx].scoreA = newA;
+      next.columns[col].matches[mIdx].scoreB = newB;
+      if (newA !== newB) next.columns[col].matches[mIdx].status = "completed";
+      const match = next.columns[col].matches[mIdx];
+      if (match.scoreA !== match.scoreB) {
+        const winner = match.scoreA > match.scoreB ? match.teamA : match.teamB;
+        if (col === 0) {
+          if (mIdx === 0) (next.columns[1].matches[0] as any).teamA = winner;
+          if (mIdx === 3) (next.columns[1].matches[0] as any).teamB = winner;
+          if (mIdx === 1) (next.columns[1].matches[1] as any).teamA = winner;
+          if (mIdx === 2) (next.columns[1].matches[1] as any).teamB = winner;
+        }
+        if (col === 1) {
+          if (mIdx === 0) (next.columns[2].matches[0] as any).teamA = winner;
+          if (mIdx === 1) (next.columns[2].matches[0] as any).teamB = winner;
+        }
+        if (col === 2) {
+          const gfMatch = next.columns[2].matches[0];
+          (next as any).winner = gfMatch.scoreA > gfMatch.scoreB ? gfMatch.teamA : gfMatch.teamB;
+        }
+      }
+      return next;
+    });
+    setIsDirty(true);
+  };
+
   const selectedGame = useMemo(() => {
     if (!event) return undefined;
     return gameId ? event.games.find((g) => g.id === gameId) : undefined;
