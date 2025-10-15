@@ -80,7 +80,7 @@ const LockLoad = () => {
     </div>
   </DialogContent>
 </Dialog>
-  {g.id === 'bgmi' || g.id === 'freefire'  || g.id === 'ml' ? (
+  {g.id === 'bgmi' || g.id === 'freefire' || g.id === 'ml' || g.id === 'codm' ? (
     <Link to={`/events/lock-load/leaderboard/${g.id}`}>
       <Button variant="outline" className="w-full font-orbitron">
         View Leaderboard
