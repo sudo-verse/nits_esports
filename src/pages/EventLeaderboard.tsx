@@ -1439,6 +1439,112 @@ const EventLeaderboard = () => {
           </div>
 
           <TabsContent value="knockout">
+            {gameId === 'codm' ? (
+              <Card className="glass-card border-primary/20">
+                <CardHeader>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <CardTitle className="font-orbitron text-2xl">COD Mobile — Preliminary Round</CardTitle>
+                    {canEdit && (
+                      <div className="flex items-center gap-3 text-sm">
+                        {isSupabaseConfigured() ? (
+                          <>
+                            <div className="text-muted-foreground">
+                              {lastSavedAt ? `Last saved ${formatDistanceToNow(new Date(lastSavedAt))} ago` : "Never saved"}
+                              {isDirty && <span className="ml-2 text-yellow-500">(unsaved)</span>}
+                            </div>
+                            <Button size="sm" disabled={!isDirty || savingPoints} onClick={saveAllPoints}>{savingPoints ? "Saving..." : "Save"}</Button>
+                          </>
+                        ) : (
+                          <div className="text-red-500">Supabase not configured</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="overflow-x-auto">
+                    <Tabs defaultValue="overall">
+                      <TabsList className="w-full">
+                        <TabsTrigger value="overall">Overall</TabsTrigger>
+                        <TabsTrigger value="match1">Match 1</TabsTrigger>
+                        <TabsTrigger value="match2">Match 2</TabsTrigger>
+                        <TabsTrigger value="match3">Match 3</TabsTrigger>
+                      </TabsList>
+
+                      <TabsContent value="overall">
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="border-border/50">
+                              <TableHead className="font-orbitron">#</TableHead>
+                              <TableHead className="font-orbitron">Team</TableHead>
+                              <TableHead className="font-orbitron text-right">Wins</TableHead>
+                              <TableHead className="font-orbitron text-right">Placement Point</TableHead>
+                              <TableHead className="font-orbitron text-right">Kill Points</TableHead>
+                              <TableHead className="font-orbitron text-right">Total Points</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {codmOverall.map((row) => (
+                              <TableRow key={`codm-overall-${row.id}`} className="border-border/50">
+                                <TableCell className="font-semibold">{row.rank}.</TableCell>
+                                <TableCell>
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-sm font-semibold">{row.team.split(' ').map(s=>s[0]).slice(0,2).join('')}</div>
+                                    {canEdit ? (
+                                      <Input value={row.team} onChange={(e)=>updateCodmTeamName(row.id, e.target.value)} />
+                                    ) : (
+                                      <div>{row.team}</div>
+                                    )}
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-right">{row.totalWins}</TableCell>
+                                <TableCell className="text-right">{row.totalPlacement}</TableCell>
+                                <TableCell className="text-right">{row.totalKills}</TableCell>
+                                <TableCell className="text-right font-semibold">{row.totalPoints}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                        <div className="text-xs text-muted-foreground mt-2">Top 8 teams advance to the Quarter-Finals based on total points.</div>
+                      </TabsContent>
+
+                      {["match1","match2","match3"].map((mk) => (
+                        <TabsContent key={mk} value={mk}>
+                          <Table>
+                            <TableHeader>
+                              <TableRow className="border-border/50">
+                                <TableHead className="font-orbitron">#</TableHead>
+                                <TableHead className="font-orbitron">Team</TableHead>
+                                <TableHead className="font-orbitron text-right">Wins</TableHead>
+                                <TableHead className="font-orbitron text-right">Placement</TableHead>
+                                <TableHead className="font-orbitron text-right">Kill Points</TableHead>
+                                <TableHead className="font-orbitron text-right">Points</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {codmRows.map((r, i) => {
+                                const m = r.matches[mk as any] as any;
+                                return (
+                                  <TableRow key={`codm-${mk}-${r.id}`} className="border-border/50">
+                                    <TableCell className="font-semibold">{i + 1}.</TableCell>
+                                    <TableCell>{r.team}</TableCell>
+                                    <TableCell className="text-right">{canEdit ? (<Input className="text-right" type="number" value={m.wins} onChange={(e)=>updateCodmStat(r.id, mk as any, 'wins', e.target.value)} />) : m.wins}</TableCell>
+                                    <TableCell className="text-right">{canEdit ? (<Input className="text-right" type="number" value={m.placement} onChange={(e)=>updateCodmStat(r.id, mk as any, 'placement', e.target.value)} />) : m.placement}</TableCell>
+                                    <TableCell className="text-right">{canEdit ? (<Input className="text-right" type="number" value={m.kills} onChange={(e)=>updateCodmStat(r.id, mk as any, 'kills', e.target.value)} />) : m.kills}</TableCell>
+                                    <TableCell className="text-right">{(m.placement||0)+(m.kills||0)}</TableCell>
+                                  </TableRow>
+                                );
+                              })}
+                            </TableBody>
+                          </Table>
+                        </TabsContent>
+                      ))}
+
+                    </Tabs>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : (
             <div>
               <Tabs defaultValue="group-a">
                 <div className="overflow-x-auto pb-2">
@@ -2611,6 +2717,7 @@ const EventLeaderboard = () => {
 
               </Tabs>
             </div>
+            )}
           </TabsContent>
 
           {gameId === 'freefire' && (
