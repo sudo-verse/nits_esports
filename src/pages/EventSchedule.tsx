@@ -95,9 +95,9 @@ const EventSchedule = () => {
               format: "points",
               rankings: [],
               schedule: [
-                { date: "Oct 15, 2025", time: "06:00 PM - 07:00 PM", matchups: ["TEAM 1 vs TEAM 3"] },
-                { date: "Oct 15, 2025", time: "07:00 PM - 08:00 PM", matchups: ["TEAM 2 vs TEAM 3"] },
-                { date: "Oct 15, 2025", time: "08:00 PM - 09:00 PM", matchups: ["TEAM 1 vs TEAM 2"] },
+                { date: "Oct 15, 2025", time: "06:00 PM - 07:00 PM", matchups: ["Whiff Master vs N-Zigger"] },
+                { date: "Oct 15, 2025", time: "07:00 PM - 08:00 PM", matchups: ["Aloo Pitika vs N-Zigger"] },
+                { date: "Oct 15, 2025", time: "08:00 PM - 09:00 PM", matchups: ["Whiff Master vs Aloo Pitika"] },
               ],
             },
             {
