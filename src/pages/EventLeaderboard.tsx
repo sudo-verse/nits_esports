@@ -1292,6 +1292,69 @@ const EventLeaderboard = () => {
     return () => { cancelled = true; };
   }, [eventId, gameId]);
 
+  useEffect(() => {
+    if (gameId !== "codm") return;
+    if (!isSupabaseConfigured()) {
+      setLastSavedAt(null);
+      setIsDirty(false);
+      return;
+    }
+    let cancelled = false;
+    const loadCodm = async () => {
+      setLoadingPoints(true);
+      try {
+        const snapshot = await fetchPointsSnapshot<string>(eventId, gameId);
+        if (cancelled) return;
+        const rows: any[] = (snapshot as any)?.codmRows ?? [];
+        if (rows && rows.length > 0) {
+          setCodmRows(
+            rows.map((r: any, idx: number) => ({
+              id: r.id ?? `${idx}`,
+              team: r.team ?? `Team ${idx + 1}`,
+              matches: {
+                match1: {
+                  wins: Number(r?.matches?.match1?.wins ?? 0) || 0,
+                  placement: Number(r?.matches?.match1?.placement ?? 0) || 0,
+                  kills: Number(r?.matches?.match1?.kills ?? 0) || 0,
+                  points: Number(r?.matches?.match1?.points ?? 0) || 0,
+                },
+                match2: {
+                  wins: Number(r?.matches?.match2?.wins ?? 0) || 0,
+                  placement: Number(r?.matches?.match2?.placement ?? 0) || 0,
+                  kills: Number(r?.matches?.match2?.kills ?? 0) || 0,
+                  points: Number(r?.matches?.match2?.points ?? 0) || 0,
+                },
+                match3: {
+                  wins: Number(r?.matches?.match3?.wins ?? 0) || 0,
+                  placement: Number(r?.matches?.match3?.placement ?? 0) || 0,
+                  kills: Number(r?.matches?.match3?.kills ?? 0) || 0,
+                  points: Number(r?.matches?.match3?.points ?? 0) || 0,
+                },
+              },
+            }))
+          );
+        }
+        const savedBracket = (snapshot as any)?.codmBracket as Bracket | undefined;
+        if (savedBracket && savedBracket.columns) {
+          setCodmBracket(savedBracket);
+        } else {
+          setCodmBracket(buildCodmBracketFromOverall(codmOverall.map((r) => r.team)));
+        }
+        setLastSavedAt(snapshot?.updatedAt ?? null);
+        setIsDirty(false);
+      } catch (e) {
+        toast.error("Failed to load CODM leaderboard");
+        console.error(e);
+      } finally {
+        if (!cancelled) setLoadingPoints(false);
+      }
+    };
+    loadCodm();
+    return () => {
+      cancelled = true;
+    };
+  }, [eventId, gameId]);
+
   const finalsDisplayRows = useMemo(() => {
     return [...finalsRows]
       .sort((a, b) => b.total - a.total)
