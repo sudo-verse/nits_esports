@@ -1380,6 +1380,9 @@ const EventLeaderboard = () => {
         setSemifinalRows(semis);
         const payload = { groups: freefireGroups, semifinals: semis } as any;
         await savePointsSnapshot(eventId, gameId, payload);
+      } else if (gameId === 'codm') {
+        const payload = { codmRows, codmBracket } as any;
+        await savePointsSnapshot(eventId, gameId, payload);
       } else {
         return;
       }
