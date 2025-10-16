@@ -1374,11 +1374,8 @@ const EventLeaderboard = () => {
         const payload = { groups: mlGroupData, bracket: mlBracket ?? buildMlBracketFromGroups() } as any;
         await savePointsSnapshot(eventId, gameId, payload);
       } else if (gameId === 'freefire') {
-        // Rebuild semifinals from current group data so top-3 from each group are promoted
-        const semis = buildSemifinalRowsFromGroups(freefireGroups);
-        // Update local state so UI reflects the promotion immediately
-        setSemifinalRows(semis);
-        const payload = { groups: freefireGroups, semifinals: semis } as any;
+        // Save current semifinal rows as edited by admin; do not rebuild and wipe stats
+        const payload = { groups: freefireGroups, semifinals: semifinalRows } as any;
         await savePointsSnapshot(eventId, gameId, payload);
       } else if (gameId === 'codm') {
         const payload = { codmRows, codmBracket } as any;
