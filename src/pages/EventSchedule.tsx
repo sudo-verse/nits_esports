@@ -124,6 +124,41 @@ const EventSchedule = () => {
                 { date: "Oct 15, 2025", time: "11:00 PM - 11:45 PM", matchups: ["UPPER BRACKET FINAL , LOWER BRACKET SEMI-FINAL"] },
               ],
             },
+            {
+              id: "CODM",
+              name: "COD Mobile",
+              image: "",
+              format: "points",
+              rankings: [],
+              schedule: [
+                { date: "Oct 16, 2025", time: "06:00 PM - 06:45 PM", matchups: ["Quarter-Final "] },
+                { date: "Oct 16, 2025", time: "06:45 PM - 07:30 PM", matchups: ["Semi-Final"] },
+              ],
+            },
+            {
+              id: "freefire",
+              name: "FreeFire",
+              image: "",
+              format: "points",
+              rankings: [],
+              schedule: [
+                { date: "Oct 16, 2025", time: "06:30 PM - 07:15 PM", matchups: ["SF MATCH 1"] },
+                { date: "Oct 16, 2025", time: "07:15 PM - 08:00 PM", matchups: ["SF MATCH 2"] },
+                { date: "Oct 16, 2025", time: "08:00 PM - 08:45 PM", matchups: ["SF MATCH 3"] },
+              ],
+            },
+            {
+              id: "MobileLegends",
+              name: "Mobile Legends",
+              image: "",
+              format: "points",
+              rankings: [],
+              schedule: [
+                { date: "Oct 16, 2025", time: "9:30 PM - 10:15 PM", matchups: ["LOWER BRACKET SEMI-FINAL"] },
+                { date: "Oct 16, 2025", time: "10:15 PM - 11:00 PM", matchups: ["LOWER BRACKET FINAL "] },
+              ],
+            },
+
           ],
         }
       : undefined);
