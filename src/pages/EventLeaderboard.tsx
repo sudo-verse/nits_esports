@@ -715,6 +715,126 @@ const EventLeaderboard = () => {
       }));
   }, [semifinalRows]);
 
+  const CODM_MATCH_KEYS = ["match1", "match2", "match3"] as const;
+  type CodmMatchKey = typeof CODM_MATCH_KEYS[number];
+  type CodmMatchStats = { wins: number; placement: number; kills: number; points: number };
+  type CodmRow = { id: string; team: string; matches: Record<CodmMatchKey, CodmMatchStats> };
+
+  const createEmptyCodmMatch = (): CodmMatchStats => ({ wins: 0, placement: 0, kills: 0, points: 0 });
+  const createEmptyCodmMatches = (): Record<CodmMatchKey, CodmMatchStats> => ({
+    match1: createEmptyCodmMatch(),
+    match2: createEmptyCodmMatch(),
+    match3: createEmptyCodmMatch(),
+  });
+
+  const [codmRows, setCodmRows] = useState<CodmRow[]>(() =>
+    Array.from({ length: 14 }, (_, i) => ({ id: `${i}`, team: `Team ${i + 1}`, matches: createEmptyCodmMatches() }))
+  );
+
+  const updateCodmTeamName = (rowId: string, name: string) => {
+    setCodmRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, team: name } : r)));
+    setIsDirty(true);
+  };
+
+  const updateCodmStat = useCallback(
+    (rowId: string, matchKey: CodmMatchKey, field: "wins" | "placement" | "kills", value: string) => {
+      const n = Number(value);
+      const v = Number.isFinite(n) ? n : 0;
+      setCodmRows((prev) =>
+        prev.map((r) => {
+          if (r.id !== rowId) return r;
+          const m = r.matches[matchKey];
+          const updated = { ...m, [field]: v } as CodmMatchStats;
+          updated.points = (field === "placement" ? v : m.placement) + (field === "kills" ? v : m.kills);
+          return { ...r, matches: { ...r.matches, [matchKey]: updated } };
+        })
+      );
+      setIsDirty(true);
+    },
+    [setCodmRows, setIsDirty]
+  );
+
+  const codmOverall = useMemo(() => {
+    const rows = codmRows
+      .map((r) => {
+        const totals = CODM_MATCH_KEYS.reduce(
+          (acc, mk) => {
+            const m = r.matches[mk];
+            acc.wins += m.wins || 0;
+            acc.placement += m.placement || 0;
+            acc.kills += m.kills || 0;
+            return acc;
+          },
+          { wins: 0, placement: 0, kills: 0 }
+        );
+        const totalPoints = totals.placement + totals.kills;
+        return { id: r.id, team: r.team, totalWins: totals.wins, totalPlacement: totals.placement, totalKills: totals.kills, totalPoints };
+      })
+      .sort((a, b) => b.totalPoints - a.totalPoints);
+    return rows.map((r, i) => ({ rank: i + 1, ...r }));
+  }, [codmRows]);
+
+  const [codmBracket, setCodmBracket] = useState<Bracket | null>(null);
+
+  const buildCodmBracketFromOverall = (teams: string[]): Bracket => {
+    const seeds = teams.slice(0, 8);
+    const qf = [
+      { teamA: seeds[0] ?? "—", teamB: seeds[7] ?? "—", scoreA: 0, scoreB: 0, status: "upcoming" as const },
+      { teamA: seeds[1] ?? "—", teamB: seeds[6] ?? "—", scoreA: 0, scoreB: 0, status: "upcoming" as const },
+      { teamA: seeds[2] ?? "—", teamB: seeds[5] ?? "—", scoreA: 0, scoreB: 0, status: "upcoming" as const },
+      { teamA: seeds[3] ?? "—", teamB: seeds[4] ?? "—", scoreA: 0, scoreB: 0, status: "upcoming" as const },
+    ];
+    const sf = [
+      { teamA: "Winner M1", teamB: "Winner M4", scoreA: 0, scoreB: 0, status: "upcoming" as const },
+      { teamA: "Winner M2", teamB: "Winner M3", scoreA: 0, scoreB: 0, status: "upcoming" as const },
+    ];
+    const gf = [{ teamA: "Winner SF1", teamB: "Winner SF2", scoreA: 0, scoreB: 0, status: "upcoming" as const }];
+    return {
+      columns: [
+        { title: "Quarterfinals", matches: qf },
+        { title: "Semifinals", matches: sf },
+        { title: "Grand Final", matches: gf },
+      ],
+    } as Bracket;
+  };
+
+  useEffect(() => {
+    if (gameId !== "codm") return;
+    if (!codmBracket) {
+      setCodmBracket(buildCodmBracketFromOverall(codmOverall.map((r) => r.team)));
+    }
+  }, [gameId, codmBracket, codmOverall]);
+
+  const handleCodmScoreChange = (col: number, mIdx: number, newA: number, newB: number) => {
+    setCodmBracket((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, columns: prev.columns.map((c) => ({ ...c, matches: c.matches.map((m) => ({ ...m })) })) } as Bracket;
+      next.columns[col].matches[mIdx].scoreA = newA;
+      next.columns[col].matches[mIdx].scoreB = newB;
+      if (newA !== newB) next.columns[col].matches[mIdx].status = "completed";
+      const match = next.columns[col].matches[mIdx];
+      if (match.scoreA !== match.scoreB) {
+        const winner = match.scoreA > match.scoreB ? match.teamA : match.teamB;
+        if (col === 0) {
+          if (mIdx === 0) (next.columns[1].matches[0] as any).teamA = winner;
+          if (mIdx === 3) (next.columns[1].matches[0] as any).teamB = winner;
+          if (mIdx === 1) (next.columns[1].matches[1] as any).teamA = winner;
+          if (mIdx === 2) (next.columns[1].matches[1] as any).teamB = winner;
+        }
+        if (col === 1) {
+          if (mIdx === 0) (next.columns[2].matches[0] as any).teamA = winner;
+          if (mIdx === 1) (next.columns[2].matches[0] as any).teamB = winner;
+        }
+        if (col === 2) {
+          const gfMatch = next.columns[2].matches[0];
+          (next as any).winner = gfMatch.scoreA > gfMatch.scoreB ? gfMatch.teamA : gfMatch.teamB;
+        }
+      }
+      return next;
+    });
+    setIsDirty(true);
+  };
+
   const selectedGame = useMemo(() => {
     if (!event) return undefined;
     return gameId ? event.games.find((g) => g.id === gameId) : undefined;
@@ -1172,6 +1292,69 @@ const EventLeaderboard = () => {
     return () => { cancelled = true; };
   }, [eventId, gameId]);
 
+  useEffect(() => {
+    if (gameId !== "codm") return;
+    if (!isSupabaseConfigured()) {
+      setLastSavedAt(null);
+      setIsDirty(false);
+      return;
+    }
+    let cancelled = false;
+    const loadCodm = async () => {
+      setLoadingPoints(true);
+      try {
+        const snapshot = await fetchPointsSnapshot<string>(eventId, gameId);
+        if (cancelled) return;
+        const rows: any[] = (snapshot as any)?.codmRows ?? [];
+        if (rows && rows.length > 0) {
+          setCodmRows(
+            rows.map((r: any, idx: number) => ({
+              id: r.id ?? `${idx}`,
+              team: r.team ?? `Team ${idx + 1}`,
+              matches: {
+                match1: {
+                  wins: Number(r?.matches?.match1?.wins ?? 0) || 0,
+                  placement: Number(r?.matches?.match1?.placement ?? 0) || 0,
+                  kills: Number(r?.matches?.match1?.kills ?? 0) || 0,
+                  points: Number(r?.matches?.match1?.points ?? 0) || 0,
+                },
+                match2: {
+                  wins: Number(r?.matches?.match2?.wins ?? 0) || 0,
+                  placement: Number(r?.matches?.match2?.placement ?? 0) || 0,
+                  kills: Number(r?.matches?.match2?.kills ?? 0) || 0,
+                  points: Number(r?.matches?.match2?.points ?? 0) || 0,
+                },
+                match3: {
+                  wins: Number(r?.matches?.match3?.wins ?? 0) || 0,
+                  placement: Number(r?.matches?.match3?.placement ?? 0) || 0,
+                  kills: Number(r?.matches?.match3?.kills ?? 0) || 0,
+                  points: Number(r?.matches?.match3?.points ?? 0) || 0,
+                },
+              },
+            }))
+          );
+        }
+        const savedBracket = (snapshot as any)?.codmBracket as Bracket | undefined;
+        if (savedBracket && savedBracket.columns) {
+          setCodmBracket(savedBracket);
+        } else {
+          setCodmBracket(buildCodmBracketFromOverall(codmOverall.map((r) => r.team)));
+        }
+        setLastSavedAt(snapshot?.updatedAt ?? null);
+        setIsDirty(false);
+      } catch (e) {
+        toast.error("Failed to load CODM leaderboard");
+        console.error(e);
+      } finally {
+        if (!cancelled) setLoadingPoints(false);
+      }
+    };
+    loadCodm();
+    return () => {
+      cancelled = true;
+    };
+  }, [eventId, gameId]);
+
   const finalsDisplayRows = useMemo(() => {
     return [...finalsRows]
       .sort((a, b) => b.total - a.total)
@@ -1196,6 +1379,9 @@ const EventLeaderboard = () => {
         // Update local state so UI reflects the promotion immediately
         setSemifinalRows(semis);
         const payload = { groups: freefireGroups, semifinals: semis } as any;
+        await savePointsSnapshot(eventId, gameId, payload);
+      } else if (gameId === 'codm') {
+        const payload = { codmRows, codmBracket } as any;
         await savePointsSnapshot(eventId, gameId, payload);
       } else {
         return;
@@ -1247,12 +1433,118 @@ const EventLeaderboard = () => {
               ) : gameId === 'bgmi' ? (
                 <TabsTrigger value="groupstage">Finals</TabsTrigger>
               ) : (
-                <TabsTrigger value="pointrush">Double Elimination</TabsTrigger>
+                <TabsTrigger value="pointrush">{gameId === 'codm' ? 'Playoffs' : 'Double Elimination'}</TabsTrigger>
               )}
             </TabsList>
           </div>
 
           <TabsContent value="knockout">
+            {gameId === 'codm' ? (
+              <Card className="glass-card border-primary/20">
+                <CardHeader>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <CardTitle className="font-orbitron text-2xl">COD Mobile — Preliminary Round</CardTitle>
+                    {canEdit && (
+                      <div className="flex items-center gap-3 text-sm">
+                        {isSupabaseConfigured() ? (
+                          <>
+                            <div className="text-muted-foreground">
+                              {lastSavedAt ? `Last saved ${formatDistanceToNow(new Date(lastSavedAt))} ago` : "Never saved"}
+                              {isDirty && <span className="ml-2 text-yellow-500">(unsaved)</span>}
+                            </div>
+                            <Button size="sm" disabled={!isDirty || savingPoints} onClick={saveAllPoints}>{savingPoints ? "Saving..." : "Save"}</Button>
+                          </>
+                        ) : (
+                          <div className="text-red-500">Supabase not configured</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="overflow-x-auto">
+                    <Tabs defaultValue="overall">
+                      <TabsList className="w-full">
+                        <TabsTrigger value="overall">Overall</TabsTrigger>
+                        <TabsTrigger value="match1">Match 1</TabsTrigger>
+                        <TabsTrigger value="match2">Match 2</TabsTrigger>
+                        <TabsTrigger value="match3">Match 3</TabsTrigger>
+                      </TabsList>
+
+                      <TabsContent value="overall">
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="border-border/50">
+                              <TableHead className="font-orbitron">#</TableHead>
+                              <TableHead className="font-orbitron">Team</TableHead>
+                              <TableHead className="font-orbitron text-right">Wins</TableHead>
+                              <TableHead className="font-orbitron text-right">Placement Point</TableHead>
+                              <TableHead className="font-orbitron text-right">Kill Points</TableHead>
+                              <TableHead className="font-orbitron text-right">Total Points</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {codmOverall.map((row) => (
+                              <TableRow key={`codm-overall-${row.id}`} className="border-border/50">
+                                <TableCell className="font-semibold">{row.rank}.</TableCell>
+                                <TableCell>
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-sm font-semibold">{row.team.split(' ').map(s=>s[0]).slice(0,2).join('')}</div>
+                                    {canEdit ? (
+                                      <Input value={row.team} onChange={(e)=>updateCodmTeamName(row.id, e.target.value)} />
+                                    ) : (
+                                      <div>{row.team}</div>
+                                    )}
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-right">{row.totalWins}</TableCell>
+                                <TableCell className="text-right">{row.totalPlacement}</TableCell>
+                                <TableCell className="text-right">{row.totalKills}</TableCell>
+                                <TableCell className="text-right font-semibold">{row.totalPoints}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                        <div className="text-xs text-muted-foreground mt-2">Top 8 teams advance to the Quarter-Finals based on total points.</div>
+                      </TabsContent>
+
+                      {["match1","match2","match3"].map((mk) => (
+                        <TabsContent key={mk} value={mk}>
+                          <Table>
+                            <TableHeader>
+                              <TableRow className="border-border/50">
+                                <TableHead className="font-orbitron">#</TableHead>
+                                <TableHead className="font-orbitron">Team</TableHead>
+                                <TableHead className="font-orbitron text-right">Wins</TableHead>
+                                <TableHead className="font-orbitron text-right">Placement</TableHead>
+                                <TableHead className="font-orbitron text-right">Kill Points</TableHead>
+                                <TableHead className="font-orbitron text-right">Points</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {codmRows.map((r, i) => {
+                                const m = r.matches[mk as any] as any;
+                                return (
+                                  <TableRow key={`codm-${mk}-${r.id}`} className="border-border/50">
+                                    <TableCell className="font-semibold">{i + 1}.</TableCell>
+                                    <TableCell>{r.team}</TableCell>
+                                    <TableCell className="text-right">{canEdit ? (<Input className="text-right" type="number" value={m.wins} onChange={(e)=>updateCodmStat(r.id, mk as any, 'wins', e.target.value)} />) : m.wins}</TableCell>
+                                    <TableCell className="text-right">{canEdit ? (<Input className="text-right" type="number" value={m.placement} onChange={(e)=>updateCodmStat(r.id, mk as any, 'placement', e.target.value)} />) : m.placement}</TableCell>
+                                    <TableCell className="text-right">{canEdit ? (<Input className="text-right" type="number" value={m.kills} onChange={(e)=>updateCodmStat(r.id, mk as any, 'kills', e.target.value)} />) : m.kills}</TableCell>
+                                    <TableCell className="text-right">{(m.placement||0)+(m.kills||0)}</TableCell>
+                                  </TableRow>
+                                );
+                              })}
+                            </TableBody>
+                          </Table>
+                        </TabsContent>
+                      ))}
+
+                    </Tabs>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : (
             <div>
               <Tabs defaultValue="group-a">
                 <div className="overflow-x-auto pb-2">
@@ -2425,6 +2717,7 @@ const EventLeaderboard = () => {
 
               </Tabs>
             </div>
+            )}
           </TabsContent>
 
           {gameId === 'freefire' && (
@@ -2848,6 +3141,30 @@ const EventLeaderboard = () => {
                     </div>
                   );
                 })()}
+              </div>
+            ) : gameId === 'codm' ? (
+              <div className="space-y-6">
+                <h3 className="font-orbitron text-2xl tracking-tight">Playoffs — Top 8</h3>
+                {canEdit && (
+                  <div className="flex items-center gap-3 text-sm mt-2">
+                    {isSupabaseConfigured() ? (
+                      <>
+                        <div className="text-muted-foreground">
+                          {lastSavedAt ? `Last saved ${formatDistanceToNow(new Date(lastSavedAt))} ago` : "Never saved"}
+                          {isDirty && <span className="ml-2 text-yellow-500">(unsaved)</span>}
+                        </div>
+                        <Button size="sm" variant="outline" onClick={() => { setCodmBracket(buildCodmBracketFromOverall(codmOverall.map(r => r.team))); setIsDirty(true); toast.success('Bracket reseeded from leaderboard'); }}>Reseed from Leaderboard</Button>
+                        <Button size="sm" disabled={!isDirty || savingPoints} onClick={saveAllPoints}>{savingPoints ? "Saving..." : "Save"}</Button>
+                      </>
+                    ) : (
+                      <div className="text-red-500">Supabase not configured</div>
+                    )}
+                  </div>
+                )}
+
+                <div className="rounded-lg border border-border/40 bg-gradient-to-b from-background/60 to-background/30 p-4">
+                  <BracketView bracket={(codmBracket ?? buildCodmBracketFromOverall(codmOverall.map(r => r.team))) as any} onScoreChange={canEdit ? handleCodmScoreChange : undefined} />
+                </div>
               </div>
             ) : (
               <div className="space-y-6">
