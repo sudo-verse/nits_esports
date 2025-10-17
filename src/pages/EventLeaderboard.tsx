@@ -2785,6 +2785,7 @@ const EventLeaderboard = () => {
                             ))}
                           </TableBody>
                         </Table>
+                        <div className="text-xs text-muted-foreground mt-2">Top 4 teams qualify for the Finals.</div>
                       </TabsContent>
 
                       <TabsContent value="match1">
@@ -2965,6 +2966,22 @@ const EventLeaderboard = () => {
                                   )}
                                 </TableCell>
                                 <TableCell className="text-right font-semibold">{row.total}</TableCell>
+                              </TableRow>
+                            ))
+                          ) : gameId === 'freefire' ? (
+                            semifinalOverviewRows.slice(0, 4).map((row, idx) => (
+                              <TableRow key={`freefire-finals-${row.id}`} className="border-border/50">
+                                <TableCell className="font-semibold">{idx + 1}.</TableCell>
+                                <TableCell>
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-sm font-semibold">{row.group}</div>
+                                    <div>{row.team}</div>
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-right">{row.totalBooyah}</TableCell>
+                                <TableCell className="text-right">{row.totalPlacement}</TableCell>
+                                <TableCell className="text-right">{row.totalKills}</TableCell>
+                                <TableCell className="text-right font-semibold">{row.totalPoints}</TableCell>
                               </TableRow>
                             ))
                           ) : (
